@@ -5,11 +5,5 @@ build-std-features = ["compiler-builtins-mem"]
 [target.'cfg(target_arch = "x86_64")']
 linker = "lld-link"
 
-[build]
-target = "x86_64-ironarm.json"
-
-[target.x86_64-blog_os]
-linker = "rust-lld"
-
 [runner]
 runner = "bootimage runner"
