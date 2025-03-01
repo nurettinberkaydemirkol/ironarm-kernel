@@ -3,11 +3,10 @@
 
 mod vga_buffer;
 use core::panic::PanicInfo;
-use core::fmt::Write;
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    println!("{}", info);
+    println!("{}", _info);
     loop {}
 }
 
@@ -15,5 +14,12 @@ fn panic(_info: &PanicInfo) -> ! {
 pub extern "C" fn _start() -> ! {
     println!("Hello World{}", "!");
 
+    ironarm::init();
+    x86_64::instructions::interrupts::int3();
+
+    #[cfg(test)]
+    test_main();
+
+    println!("[ok]");
     loop {}
 }
