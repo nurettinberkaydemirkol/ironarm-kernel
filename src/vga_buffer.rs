@@ -214,25 +214,30 @@ pub fn draw_mouse(x: usize, y: usize) {
 
 static mut MOUSE_X: usize = 40;
 static mut MOUSE_Y: usize = 12;
-
+static mut PREV_MOUSE_CHAR: Option<ScreenChar> = None;
 
 pub fn update_mouse() {
     if let Some((x_offset, y_offset)) = read_mouse() {
+        let buffer = unsafe { &mut *(0xb8000 as *mut Buffer) };
         unsafe {
-            clear_mouse(MOUSE_X, MOUSE_Y);
-
+            if let Some(prev_char) = PREV_MOUSE_CHAR {
+                buffer.chars[MOUSE_Y][MOUSE_X].write(prev_char);
+            }
             let new_x = (MOUSE_X as isize + x_offset as isize)
                 .clamp(0, (BUFFER_WIDTH - 1) as isize) as usize;
             let new_y = (MOUSE_Y as isize - y_offset as isize)
                 .clamp(0, (BUFFER_HEIGHT - 1) as isize) as usize;
-
+            
+            PREV_MOUSE_CHAR = Some(buffer.chars[new_y][new_x].read());
+            
             MOUSE_X = new_x;
             MOUSE_Y = new_y;
-
+            
             draw_mouse(MOUSE_X, MOUSE_Y);
         }
     }
 }
+
 
 
 // MACROS 
