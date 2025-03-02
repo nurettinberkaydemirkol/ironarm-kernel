@@ -74,6 +74,7 @@ impl Writer {
                     color_code,
                 });
                 self.column_position += 1;
+                set_cursor_position(self.column_position, row);
             }
         }
     }
@@ -119,13 +120,120 @@ impl fmt::Write for Writer {
     }
 }
 
+fn get_cursor_position() -> (usize, usize) {
+    use x86_64::instructions::port::{Port};
+
+    let mut port3d4 = Port::new(0x3D4);
+    let mut port3d5 = Port::new(0x3D5);
+
+    unsafe {
+        port3d4.write(0x0F_u8);
+        let low: u16 = port3d5.read();
+        port3d4.write(0x0E_u8);
+        let high: u16 = port3d5.read();
+        let pos = ((high as u16) << 8) | (low as u16);
+        (pos as usize % BUFFER_WIDTH, pos as usize / BUFFER_WIDTH)
+    }
+}
+
+fn set_cursor_position(x: usize, y: usize) {
+    use x86_64::instructions::port::{Port};
+
+    let pos: u16 = (y as u16) * (BUFFER_WIDTH as u16) + (x as u16);
+    let mut port3d4 = Port::new(0x3D4);
+    let mut port3d5 = Port::new(0x3D5);
+
+    unsafe {
+        port3d4.write(0x0E_u8);
+        port3d5.write(((pos >> 8) & 0xFF) as u8);
+        port3d4.write(0x0F_u8);
+        port3d5.write((pos & 0xFF) as u8);
+    }
+}
+
+
 lazy_static! {
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-        column_position: 0,
+        column_position: get_cursor_position().0,
         color_code: ColorCode::new(Color::Yellow, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
+
+use x86_64::instructions::port::Port;
+
+pub fn enable_mouse() {
+    let mut command_port = Port::new(0x64);
+    let mut data_port = Port::new(0x60);
+
+    unsafe {
+        command_port.write(0xA8_u8); 
+        command_port.write(0x20_u8); 
+
+        let status = data_port.read();
+        command_port.write(0x60_u8);
+        data_port.write(status | 2);
+
+        command_port.write(0xD4_u8);
+        data_port.write(0xF4_u8);
+    }
+}
+
+pub fn read_mouse() -> Option<(i8, i8)> {
+    let mut data_port = Port::new(0x60);
+    unsafe {
+        let packet0: u8 = data_port.read();
+        if packet0 & 0x08 == 0 {
+            return None;
+        }
+        let packet1: u8 = data_port.read();
+        let packet2: u8 = data_port.read();
+        Some((packet1 as i8, packet2 as i8))
+    }
+}
+
+pub fn clear_mouse(x: usize, y: usize) {
+    let blank = ScreenChar {
+        ascii_character: b' ',
+        color_code: ColorCode::new(Color::Black, Color::Black),
+    };
+    let buffer = unsafe { &mut *(0xb8000 as *mut Buffer) };
+    buffer.chars[y][x].write(blank);
+}
+
+pub fn draw_mouse(x: usize, y: usize) {
+    const MOUSE_CHAR: u8 = 0xdb;
+    let color = ColorCode::new(Color::White, Color::Black);
+    let mouse_char = ScreenChar {
+        ascii_character: MOUSE_CHAR,
+        color_code: color,
+    };
+    let buffer = unsafe { &mut *(0xb8000 as *mut Buffer) };
+    buffer.chars[y][x].write(mouse_char);
+}
+
+static mut MOUSE_X: usize = 40;
+static mut MOUSE_Y: usize = 12;
+
+
+pub fn update_mouse() {
+    if let Some((x_offset, y_offset)) = read_mouse() {
+        unsafe {
+            clear_mouse(MOUSE_X, MOUSE_Y);
+
+            let new_x = (MOUSE_X as isize + x_offset as isize)
+                .clamp(0, (BUFFER_WIDTH - 1) as isize) as usize;
+            let new_y = (MOUSE_Y as isize - y_offset as isize)
+                .clamp(0, (BUFFER_HEIGHT - 1) as isize) as usize;
+
+            MOUSE_X = new_x;
+            MOUSE_Y = new_y;
+
+            draw_mouse(MOUSE_X, MOUSE_Y);
+        }
+    }
+}
+
 
 // MACROS 
 
